@@ -541,7 +541,7 @@ export default function App() {
           'Incident response and notification',
           'Third-party risk and due diligence',
           'Data retention and disposal',
-          'Contractual obligations and SLAs',
+          'Contractual obligations and SLA',
         ]
 
         const { fullText, results } = await processor.processFile(file, sampleChecklist)
