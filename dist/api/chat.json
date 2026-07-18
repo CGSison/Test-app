@@ -1,0 +1,17 @@
+{
+  "defaultResponse": "For BSP-aligned guidance, I recommend reviewing the relevant information security standard, the supporting control objectives, and the evidence expectations for your operating context.",
+  "responses": [
+    {
+      "question": "what are the key isms controls for bsp",
+      "response": "The key BSP-aligned ISMS controls usually include access management, change management, logging and monitoring, incident response, vendor oversight, and periodic control testing. Focus on least privilege, segregation of duties, and traceable evidence retention."
+    },
+    {
+      "question": "summarize the incident response requirements",
+      "response": "Incident response should include detection, triage, containment, eradication, recovery, and post-incident review. BSP expectations typically center on timely escalation, documented actions, evidence preservation, and clear ownership across technical and governance teams."
+    },
+    {
+      "question": "how should access management be handled",
+      "response": "Access management should be role-based, least-privilege driven, and reviewed regularly. Ensure accounts are provisioned with clear approval, removed promptly when no longer needed, and monitored for unusual access patterns."
+    }
+  ]
+}

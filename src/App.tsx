@@ -1,7 +1,34 @@
+import { useMemo, useState } from "react"
 import bspLogo from "@/imports/bsp-logonew.png"
 import headerBg from "@/imports/Header.png"
 
 const NAV_LINKS = ["Space", "Score", "Sign in"]
+
+const QUICK_PROMPTS = [
+  "What are the key ISMS controls for BSP?",
+  "Summarize the incident response requirements.",
+  "How should access management be handled?",
+]
+
+type ChatMessage = {
+  id: number
+  role: "assistant" | "user"
+  text: string
+}
+
+type ChatSession = {
+  id: number
+  title: string
+  messages: ChatMessage[]
+}
+
+const INITIAL_HISTORY: ChatMessage[] = [
+  {
+    id: 1,
+    role: "assistant",
+    text: "Hello. I can help answer questions about BSP information security standards, governance controls, and secure operating practices.",
+  },
+]
 
 const CARDS = [
   {
@@ -104,7 +131,7 @@ function GovSeal() {
   )
 }
 
-function Card({ card }: { card: (typeof CARDS)[0] }) {
+function Card({ card, onOpen }: { card: (typeof CARDS)[0]; onOpen?: (id: string) => void }) {
   return (
     <div
       style={{
@@ -212,6 +239,7 @@ function Card({ card }: { card: (typeof CARDS)[0] }) {
 
       {/* CTA Button */}
       <button
+        onClick={() => onOpen?.(card.id)}
         style={{
           display: "flex",
           alignItems: "center",
@@ -242,12 +270,267 @@ function Card({ card }: { card: (typeof CARDS)[0] }) {
 }
 
 export default function App() {
+  const [activeView, setActiveView] = useState<"landing" | "assistant">("landing")
+  const [sessions, setSessions] = useState<ChatSession[]>([
+    { id: 1, title: "Welcome", messages: INITIAL_HISTORY },
+  ])
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(1)
+  const [draft, setDraft] = useState("")
+
+  const assistantTitle = useMemo(() => "ISMS Governance Assistant", [])
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
+
+  const handleCreateNewChat = () => {
+    const newSessionId = Date.now()
+    const newSession: ChatSession = {
+      id: newSessionId,
+      title: "New chat",
+      messages: [
+        {
+          id: newSessionId,
+          role: "assistant",
+          text: "A fresh chat is ready. Ask about BSP information security controls, governance, or response expectations.",
+        },
+      ],
+    }
+
+    setSessions((prev) => [...prev, newSession])
+    setActiveSessionId(newSessionId)
+    setDraft("")
+  }
+
+  const handleClearHistory = () => {
+    setSessions([])
+    setActiveSessionId(null)
+    setDraft("")
+  }
+
+  const handleSend = async () => {
+    const trimmed = draft.trim()
+    if (!trimmed) return
+
+    let sessionId = activeSessionId
+    if (sessionId === null) {
+      const newSessionId = Date.now()
+      const newSession: ChatSession = {
+        id: newSessionId,
+        title: "New chat",
+        messages: [],
+      }
+      setSessions((prev) => [...prev, newSession])
+      setActiveSessionId(newSessionId)
+      sessionId = newSessionId
+    }
+
+    const nextMessage: ChatMessage = {
+      id: Date.now(),
+      role: "user",
+      text: trimmed,
+    }
+
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? { ...session, messages: [...session.messages, nextMessage] }
+          : session
+      )
+    )
+    setDraft("")
+
+    try {
+      const response = await fetch("/api/chat.json")
+      const data = await response.json()
+      const normalized = trimmed.toLowerCase()
+      const match = data.responses?.find(
+        (entry: { question: string; response: string }) => entry.question === normalized
+      )
+
+      const assistantReply: ChatMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        text: match?.response ?? data.defaultResponse,
+      }
+
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? { ...session, messages: [...session.messages, assistantReply] }
+            : session
+        )
+      )
+    } catch {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                messages: [
+                  ...session.messages,
+                  {
+                    id: Date.now() + 1,
+                    role: "assistant",
+                    text: "The mock assistant service could not be reached. Please try again shortly.",
+                  },
+                ],
+              }
+            : session
+        )
+      )
+    }
+  }
+
+  if (activeView === "assistant") {
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)", fontFamily: "system-ui, -apple-system, sans-serif", color: "#0f172a" }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: "24px 24px 40px" }}>
+          <button
+            onClick={() => setActiveView("landing")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              border: "1px solid #cbd5e1",
+              background: "white",
+              color: "#0f172a",
+              borderRadius: 999,
+              padding: "10px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginBottom: 20,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+              <path d="M8 3L4 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back to main page
+          </button>
+
+          <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 20, minHeight: "80vh" }}>
+            <aside style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(226,232,240,0.9)", borderRadius: 20, padding: 18, boxShadow: "0 8px 30px rgba(15,23,42,0.06)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#ede9fe", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="14" fill="#7c3aed" opacity="0.15" />
+                    <path d="M11 21 L14 18 M16 10 C16 10 22 13 20 18 C19 21 15 23 12 21" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" fill="none"/>
+                    <path d="M10 24 L13 21" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "#7c3aed", margin: 0 }}>BSP AI</p>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: "2px 0 0" }}>{assistantTitle}</h3>
+                </div>
+              </div>
+
+              <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <button
+                    onClick={handleCreateNewChat}
+                    style={{ flex: 1, border: "1px solid #cbd5e1", background: "white", color: "#0f172a", borderRadius: 999, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    New chat
+                  </button>
+                  <button
+                    onClick={handleClearHistory}
+                    style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", borderRadius: 999, padding: "8px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#64748b", margin: "0 0 10px", textTransform: "uppercase", letterSpacing: "0.12em" }}>Chat history</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {sessions.length === 0 ? (
+                    <div style={{ background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 10, padding: "10px 12px", color: "#64748b", fontSize: 12 }}>
+                      No saved chats yet.
+                    </div>
+                  ) : (
+                    sessions.map((session) => (
+                      <button
+                        key={session.id}
+                        onClick={() => setActiveSessionId(session.id)}
+                        style={{
+                          background: session.id === activeSessionId ? "#ede9fe" : "#f8fafc",
+                          border: session.id === activeSessionId ? "1px solid #c4b5fd" : "1px solid #e2e8f0",
+                          borderRadius: 10,
+                          padding: "10px 12px",
+                          textAlign: "left",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0f172a", margin: 0 }}>{session.title}</p>
+                        <p style={{ fontSize: 12, color: "#64748b", margin: "4px 0 0", lineHeight: 1.45 }}>
+                          {session.messages[session.messages.length - 1]?.text ?? "New conversation"}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </aside>
+
+            <section style={{ background: "white", border: "1px solid rgba(226,232,240,0.9)", borderRadius: 24, boxShadow: "0 12px 40px rgba(15,23,42,0.08)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ padding: "24px 24px 16px", borderBottom: "1px solid #f1f5f9", background: "linear-gradient(90deg, rgba(15,23,42,0.96) 0%, rgba(51,65,85,0.98) 100%)", color: "white" }}>
+                <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(255,255,255,0.72)", margin: 0 }}>Secure knowledge assistant</p>
+                <h2 style={{ fontSize: 24, fontWeight: 800, margin: "6px 0 4px" }}>Ask about BSP information security</h2>
+                <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: 0, lineHeight: 1.6 }}>Get guidance on controls, governance, incident response, and secure practices aligned to BSP expectations.</p>
+              </div>
+
+              <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12, flex: 1, background: "#f8fafc" }}>
+                {activeSession?.messages.map((item) => (
+                  <div key={item.id} style={{ display: "flex", justifyContent: item.role === "user" ? "flex-end" : "flex-start" }}>
+                    <div style={{ maxWidth: "80%", padding: "12px 14px", borderRadius: 14, background: item.role === "user" ? "#4f46e5" : "white", color: item.role === "user" ? "white" : "#0f172a", boxShadow: "0 4px 18px rgba(15,23,42,0.06)", border: item.role === "assistant" ? "1px solid #e2e8f0" : "none" }}>
+                      {item.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ padding: "0 20px 20px" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {QUICK_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      onClick={() => setDraft(prompt)}
+                      style={{ border: "1px solid #cbd5e1", background: "white", color: "#334155", borderRadius: 999, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <input
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleSend()
+                    }}
+                    placeholder="Ask about BSP information security..."
+                    style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 999, padding: "12px 14px", fontSize: 14, outline: "none" }}
+                  />
+                  <button
+                    onClick={handleSend}
+                    style={{ border: "none", background: "#4f46e5", color: "white", borderRadius: 999, padding: "0 16px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       {/* Header / Hero */}
       <header
         style={{
           position: "relative",
+          minHeight: "clamp(280px, 38vh, 420px)",
+          padding: "0 0 32px",
           backgroundImage: `url(${headerBg})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
@@ -263,14 +546,15 @@ export default function App() {
           }}
         />
 
-        <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ position: "relative", zIndex: 1, paddingBottom: 24 }}>
           {/* Header: logo left, text center-left, nav right */}
           <div
             style={{
               display: "flex",
               alignItems: "stretch",
               justifyContent: "space-between",
-              minHeight: 110,
+              minHeight: 120,
+              paddingTop: 8,
             }}
           >
             {/* Logo + text block */}
@@ -368,6 +652,84 @@ export default function App() {
               ))}
             </div>
           </div>
+
+          <div style={{ padding: "44px 32px 0" }}>
+            <div style={{ maxWidth: 740 }}>
+              <p
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  letterSpacing: "0.22em",
+                  color: "rgba(255,255,255,0.8)",
+                  textTransform: "uppercase",
+                  margin: "0 0 12px",
+                }}
+              >
+                AI-enabled compliance experience
+              </p>
+              <h2
+                style={{
+                  fontSize: "clamp(32px, 3.6vw, 48px)",
+                  fontWeight: 800,
+                  color: "white",
+                  lineHeight: 1.08,
+                  margin: "0 0 16px",
+                  letterSpacing: "-0.03em",
+                  textShadow: "0 2px 12px rgba(0,0,0,0.35)",
+                }}
+              >
+                Move from manual reviews to trusted digital action.
+              </h2>
+              <p
+                style={{
+                  fontSize: 18,
+                  color: "rgba(255,255,255,0.84)",
+                  lineHeight: 1.65,
+                  margin: 0,
+                  maxWidth: 680,
+                }}
+              >
+                Streamline assessments, supplier reviews, and governance with a secure experience built for BSP teams.
+              </p>
+              <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" }}>
+                <a
+                  href="#"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "12px 18px",
+                    borderRadius: 999,
+                    background: "white",
+                    color: "#0f172a",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    textDecoration: "none",
+                  }}
+                >
+                  Explore the tools
+                </a>
+                <a
+                  href="#"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "12px 18px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(255,255,255,0.35)",
+                    background: "rgba(255,255,255,0.1)",
+                    color: "white",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    textDecoration: "none",
+                  }}
+                >
+                  Learn more
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -387,7 +749,15 @@ export default function App() {
           }}
         >
           {CARDS.map((card) => (
-            <Card key={card.id} card={card} />
+            <Card
+              key={card.id}
+              card={card}
+              onOpen={(id) => {
+                if (id === "sign") {
+                  setActiveView("assistant")
+                }
+              }}
+            />
           ))}
         </div>
       </main>
