@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { answerQuery as ismsAnswer } from "@/api/ismsAssistant"
 import bspLogo from "@/imports/bsp-logonew.png"
 import headerBg from "@/imports/Header.png"
 
@@ -232,7 +233,7 @@ function Card({ card, onOpen }: { card: (typeof CARDS)[0]; onOpen?: (id: string)
               <p style={{ fontSize: 11.5, color: "#64748b", margin: 0, lineHeight: 1.5 }}>
                 {f.detail}
               </p>
-            </div>
+                  </div>
           </div>
         ))}
       </div>
@@ -270,12 +271,17 @@ function Card({ card, onOpen }: { card: (typeof CARDS)[0]; onOpen?: (id: string)
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<"landing" | "assistant">("landing")
+  const [activeView, setActiveView] = useState<"landing" | "assistant" | "score">("landing")
   const [sessions, setSessions] = useState<ChatSession[]>([
     { id: 1, title: "Welcome", messages: INITIAL_HISTORY },
   ])
   const [activeSessionId, setActiveSessionId] = useState<number | null>(1)
   const [draft, setDraft] = useState("")
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+  const [processingMap, setProcessingMap] = useState<Record<string, boolean>>({})
+  const [checklists, setChecklists] = useState<Record<string, { item: string; satisfied: boolean; reference?: string }[]>>({})
+  const [parsedTextMap, setParsedTextMap] = useState<Record<string, string>>({})
+  const [showFullTextMap, setShowFullTextMap] = useState<Record<string, boolean>>({})
 
   const assistantTitle = useMemo(() => "ISMS Governance Assistant", [])
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
@@ -338,17 +344,11 @@ export default function App() {
     setDraft("")
 
     try {
-      const response = await fetch("/api/chat.json")
-      const data = await response.json()
-      const normalized = trimmed.toLowerCase()
-      const match = data.responses?.find(
-        (entry: { question: string; response: string }) => entry.question === normalized
-      )
-
+      const res = await ismsAnswer(trimmed, parsedTextMap)
       const assistantReply: ChatMessage = {
         id: Date.now() + 1,
         role: "assistant",
-        text: match?.response ?? data.defaultResponse,
+        text: res.response,
       }
 
       setSessions((prev) =>
@@ -369,7 +369,7 @@ export default function App() {
                   {
                     id: Date.now() + 1,
                     role: "assistant",
-                    text: "The mock assistant service could not be reached. Please try again shortly.",
+                    text: "The assistant service could not be reached. Please try again shortly.",
                   },
                 ],
               }
@@ -523,6 +523,191 @@ export default function App() {
     )
   }
 
+  if (activeView === "score") {
+    const handleFilesChange = (e: any) => {
+      const files = Array.from(e.target.files || []) as File[]
+      setUploadedFiles(files)
+      setChecklists({})
+      setProcessingMap({})
+    }
+
+    const analyzeFile = async (file: File) => {
+      setProcessingMap((p) => ({ ...p, [file.name]: true }))
+      try {
+        const processor = await import('@/api/pdfProcessor')
+        const sampleChecklist = [
+          'Data encryption at rest and in transit',
+          'Access control and least privilege',
+          'Incident response and notification',
+          'Third-party risk and due diligence',
+          'Data retention and disposal',
+          'Contractual obligations and SLAs',
+        ]
+
+        const { fullText, results } = await processor.processFile(file, sampleChecklist)
+        setChecklists((c) => ({ ...c, [file.name]: results }))
+        setParsedTextMap((p) => ({ ...p, [file.name]: fullText }))
+      } catch (err) {
+        setChecklists((c) => ({ ...c, [file.name]: [{ item: 'Error parsing PDF', satisfied: false }] }))
+      } finally {
+        setProcessingMap((p) => ({ ...p, [file.name]: false }))
+      }
+    }
+
+    const downloadResults = async (name: string) => {
+      const results = checklists[name]
+      if (!results) return
+
+      try {
+        const mod = await import('xlsx')
+        const XLSX = (mod && (mod.default ?? mod)) as any
+
+        const rows = results.map((r) => ({ Requirement: r.item, Evaluation: r.satisfied ? 'Satisfied' : 'Not found', 'Reference text': r.reference ?? '' }))
+        const ws = XLSX.utils.json_to_sheet(rows)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Checklist')
+        const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+        const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${name}-checklist.xlsx`
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (err) {
+        // Fallback to JSON if xlsx fails
+        const payload = { file: name, results, satisfiedCount: results.filter((r) => r.satisfied).length }
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${name}-checklist.json`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    }
+
+    return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)", fontFamily: "system-ui, -apple-system, sans-serif", color: "#0f172a" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 24px 40px" }}>
+          <button
+            onClick={() => setActiveView("landing")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              border: "1px solid #cbd5e1",
+              background: "white",
+              color: "#0f172a",
+              borderRadius: 999,
+              padding: "10px 14px",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              marginBottom: 20,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
+              <path d="M8 3L4 7l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back to main page
+          </button>
+
+          <div style={{ background: "white", border: "1px solid rgba(226,232,240,0.9)", borderRadius: 20, padding: 20 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Supplier Risk Review — Score</h2>
+            <p style={{ marginTop: 8, color: "#64748b" }}>Upload PDF contract files to generate a sample compliance checklist extracted from the document.</p>
+
+            <div style={{ marginTop: 18, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+              <input type="file" accept="application/pdf" multiple onChange={handleFilesChange} />
+              <button
+                onClick={() => {
+                  uploadedFiles.forEach((f) => analyzeFile(f))
+                }}
+                disabled={uploadedFiles.length === 0}
+                style={{ border: "none", background: "#0d9488", color: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+              >
+                Analyze all
+              </button>
+            </div>
+
+            <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+              {uploadedFiles.length === 0 ? (
+                <div style={{ color: "#94a3b8" }}>No files selected.</div>
+              ) : (
+                uploadedFiles.map((file) => (
+                  <div key={file.name} style={{ border: "1px solid #e6eef2", borderRadius: 12, padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{file.name}</div>
+                      <div style={{ fontSize: 13, color: "#64748b" }}>{(file.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button
+                        onClick={() => analyzeFile(file)}
+                        disabled={!!checklists[file.name] || !!processingMap[file.name]}
+                        style={{ border: "1px solid #cbd5e1", background: "white", padding: "8px 10px", borderRadius: 8, cursor: "pointer" }}
+                      >
+                        {processingMap[file.name] ? "Analyzing..." : checklists[file.name] ? "Done" : "Analyze"}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+              {Object.keys(checklists).map((name) => (
+                <div key={name} style={{ background: "#f8fafc", borderRadius: 12, padding: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontWeight: 800 }}>{name} — Extracted checklist</div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <div style={{ fontSize: 13, color: "#475569" }}>{checklists[name].filter((r) => r.satisfied).length}/{checklists[name].length} satisfied</div>
+                        <button onClick={() => downloadResults(name)} style={{ border: "1px solid #cbd5e1", background: "white", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}>Download results</button>
+                      </div>
+                  </div>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ textAlign: "left", borderBottom: "1px solid #e2e8f0" }}>
+                            <th style={{ padding: "8px 6px" }}>Requirement</th>
+                            <th style={{ padding: "8px 6px", width: 140 }}>Evaluation</th>
+                            <th style={{ padding: "8px 6px" }}>Reference text</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {checklists[name].map((item, idx) => (
+                            <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "10px 6px", verticalAlign: "top" }}>{item.item}</td>
+                              <td style={{ padding: "10px 6px", verticalAlign: "top" }}>{item.satisfied ? "Satisfied" : "Not found"}</td>
+                              <td style={{ padding: "10px 6px", verticalAlign: "top", color: "#334155" }}>{item.reference ?? ""}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                      <button
+                        onClick={() => setShowFullTextMap((s) => ({ ...s, [name]: !s[name] }))}
+                        style={{ border: "1px solid #cbd5e1", background: "white", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}
+                      >
+                        {showFullTextMap[name] ? "Hide full text" : "View full text"}
+                      </button>
+                      <div style={{ fontSize: 13, color: "#475569" }}>{parsedTextMap[name] ? "Full text available" : "No extracted text"}</div>
+                    </div>
+
+                    {showFullTextMap[name] && (
+                      <div style={{ marginTop: 12, border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, background: "white", maxHeight: 360, overflow: "auto", whiteSpace: "pre-wrap", fontSize: 13, color: "#0f172a" }}>
+                        {parsedTextMap[name] ? parsedTextMap[name].replace(/\s+/g, ' ').trim() : "(No extracted text available)"}
+                      </div>
+                    )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "system-ui, -apple-system, sans-serif" }}>
       {/* Header / Hero */}
@@ -619,6 +804,12 @@ export default function App() {
                 <a
                   key={link}
                   href="#"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (link === "Space") setActiveView("landing")
+                    if (link === "Score") setActiveView("score")
+                    if (link === "Sign in") setActiveView("assistant")
+                  }}
                   style={{
                     color: "rgba(255,255,255,0.85)",
                     fontSize: 16,
@@ -753,9 +944,9 @@ export default function App() {
               key={card.id}
               card={card}
               onOpen={(id) => {
-                if (id === "sign") {
-                  setActiveView("assistant")
-                }
+                if (id === "sign") setActiveView("assistant")
+                if (id === "score") setActiveView("score")
+                if (id === "space") setActiveView("landing")
               }}
             />
           ))}
