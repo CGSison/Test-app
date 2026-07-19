@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:api": "python3 -m uvicorn server:app --host 0.0.0.0 --port 8000",
     "build": "vite build",
     "preview": "vite preview",
     "format": "oxfmt"
